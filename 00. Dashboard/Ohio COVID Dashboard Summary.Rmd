@@ -47,12 +47,7 @@ Age<-read_excel("OhioPop.xlsx") %>% mutate(Population=Population/100000)
 
 # Read in Ohio Covid-19 CSV file, file path keeps changing so keeping record of old links
 
-# Old Link https://coronavirus.ohio.gov/static/COVIDSummaryData.csv
-# Old Link2 https://coronavirus.ohio.gov/static/dashboards/COVIDSummaryData.csv
-# Old Link3 https://coronavirus.ohio.gov/static/dashboards/COVIDDeathData_CountyOfResidence.csv"
-
-#"https://coronavirus.ohio.gov/static/dashboards/COVIDDeathData_CountyOfResidence.csv", 
-
+# Old Link  https://coronavirus.ohio.gov/static/dashboards/COVIDDeathData_CountyOfResidence.csv"
 
 COVID<-read_csv("https://coronavirus.ohio.gov/static/dashboards/COVIDDeathData_CountyOfResidence.csv", 
                 col_types=cols(col_character(), col_character(), col_character(),
