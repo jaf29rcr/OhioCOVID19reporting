@@ -1,0 +1,960 @@
+---
+title: "Ohio Covid-19 Dashboard Summary"
+date: "April 24, 2021"
+output:
+  html_document:
+    code_folding: none
+    df_print: paged
+    highlight: tango
+    number_sections: no
+    theme: flatly
+    toc: yes
+    toc_depth: 2
+  pdf_document:
+    toc: yes
+    toc_depth: '2'
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+    echo = FALSE,
+    message=FALSE,
+    warning = FALSE,
+    out.width="100%", 
+    out.height="100%",
+    dpi=300)
+```
+
+
+```{r}
+library(tidyverse)
+library(readxl)
+library(lubridate)
+library(maps)
+library(tidyquant)
+library(fs)
+
+# Read in reference files (County and Age Population Info)
+
+# Key to map County to Hospital Region, also has county population info
+
+Region<-read_excel("Region.xlsx") 
+
+# Ohio population by Age Range
+
+Age<-read_excel("OhioPop.xlsx") %>% mutate(Population=Population/100000)
+
+
+# Read in Ohio Covid-19 CSV file, file path keeps changing so keeping record of old links
+
+# Old Link https://coronavirus.ohio.gov/static/COVIDSummaryData.csv
+# Old Link2 https://coronavirus.ohio.gov/static/dashboards/COVIDSummaryData.csv
+# Old Link3 https://coronavirus.ohio.gov/static/dashboards/COVIDDeathData_CountyOfResidence.csv"
+
+#"https://coronavirus.ohio.gov/static/dashboards/COVIDDeathData_CountyOfResidence.csv", 
+
+
+COVID<-read_csv("https://coronavirus.ohio.gov/static/dashboards/COVIDDeathData_CountyOfResidence.csv", 
+                col_types=cols(col_character(), col_character(), col_character(),
+                               col_character(), col_character(), col_character(),
+                               col_number(), col_number(), col_number())) %>% 
+  filter(County!="Grand Total") %>%
+  mutate(`Admission Date`=case_when(`Admission Date`== "Unknown" ~ `Onset Date`,
+                              TRUE ~ `Admission Date`)) %>%
+  inner_join(Region) %>% 
+  mutate(Region=case_when(
+    Region==1 ~ "1. Toledo",
+    Region==2 ~ "2. Cleveland",
+    Region==3 ~ "3. Dayton",
+    Region==4 ~ "4. Columbus",
+    Region==5 ~ "5. Akron",
+    Region==6 ~ "6. Cincinnati",
+    Region==7 ~ "7. SE Ohio (Athens)",
+    TRUE ~ "8. SE Ohio (Zanesville)")) %>% 
+  rename(`Death Count`=9)
+
+
+# Create shell of all dates between 1/1/20 and today 
+
+dates<-tibble::enframe(seq(as.Date("2020/1/1"), today(), "days")) %>% 
+  rename(Date=value) %>% 
+  select(Date)
+
+# Merge dates with info
+
+Region_Date<-COVID %>% distinct(Region) %>% crossing(dates)
+
+Age_Date<-COVID %>% distinct(`Age Range`) %>% crossing(dates)
+
+# Get total population for Ohio
+
+Ohio_Pop<-Region %>% summarize(Population=sum(Population)/100000) %>% pull() %>% pluck()
+
+# Population by Region
+
+Region_Pop<-Region %>%
+    mutate(Region=case_when(
+    Region==1 ~ "1. Toledo",
+    Region==2 ~ "2. Cleveland",
+    Region==3 ~ "3. Dayton",
+    Region==4 ~ "4. Columbus",
+    Region==5 ~ "5. Akron",
+    Region==6 ~ "6. Cincinnati",
+    Region==7 ~ "7. SE Ohio (Athens)",
+    TRUE ~ "8. SE Ohio (Zanesville)"))%>% 
+    group_by(Region) %>% 
+    summarize(Population=sum(Population)/100000) %>% 
+    ungroup()
+  
+```
+
+# Data from Ohio Covid Dashboard
+
+https://coronavirus.ohio.gov/wps/portal/gov/covid-19/dashboards/overview
+
+
+## Detected Cases by Onset Date
+
+
+#### Mandate Tracker
+
+```{r}
+
+State_Plot<-COVID %>% 
+      filter(`Onset Date` != "Unknown") %>% 
+  filter(!is.na(`Onset Date`)) %>% 
+  group_by(`Onset Date`) %>% 
+  summarize(Cases=sum(`Case Count`)) %>% 
+  ungroup() %>% 
+  mutate(Date=ymd(`Onset Date`)) %>% 
+  filter(Date<=today()-days(1) & Date>=today()-days(14)) %>% 
+  summarize(Cases=sum(Cases)/Ohio_Pop) %>% 
+  ggplot(aes(x="Ohio", y=Cases))+
+  geom_col(fill="#2C3E50")+
+  geom_hline(aes(yintercept=50), color="red")+
+  scale_y_continuous(limits=c(0,350))+
+  geom_label(aes(label=Cases%>%scales::number(accuracy=0.1)))+
+  theme_tq()+
+  labs(
+      title="Entire State",
+      x="", y=""
+  )
+
+Region_plot<-COVID %>% 
+  filter(`Onset Date` != "Unknown") %>% 
+  filter(!is.na(`Onset Date`)) %>% 
+  group_by(Region, `Onset Date`) %>% 
+  summarize(Cases=sum(`Case Count`)) %>% 
+  ungroup() %>% 
+  mutate(Date=ymd(`Onset Date`)) %>% 
+  filter(Date<=today()-days(1) & Date>=today()-days(14)) %>% 
+  inner_join(Region_Pop) %>% 
+  group_by(Region, Population) %>% 
+  summarize(Cases=sum(Cases)) %>% 
+  ungroup() %>% 
+  mutate(Cases=Cases/Population) %>% 
+  mutate(Region=Region %>% fct_rev()) %>% 
+  ggplot(aes(x=Region, y=Cases))+
+  geom_col(fill="#2C3E50")+
+  geom_hline(aes(yintercept=50), color="red")+
+  scale_y_continuous(limits=c(0,350))+
+  coord_flip() +
+  geom_label(aes(label=Cases%>%scales::number(accuracy=0.1)))+
+  theme_tq()+
+  labs(
+      title="Region",
+      x="", y=""
+  )
+
+Age_plot<-COVID %>% 
+  filter(`Onset Date` != "Unknown") %>% 
+  filter(!is.na(`Onset Date`)) %>% 
+  group_by(`Age Range`, `Onset Date`) %>% 
+  summarize(Cases=sum(`Case Count`)) %>% 
+  ungroup() %>% 
+  mutate(Date=ymd(`Onset Date`)) %>% 
+  filter(Date<=today()-days(1) & Date>=today()-days(14)) %>% 
+  inner_join(Age) %>% 
+  group_by(`Age Range`, Population) %>% 
+  summarize(Cases=sum(Cases)) %>% 
+  ungroup() %>% 
+  mutate(Cases=Cases/Population) %>% 
+  mutate(`Age Range`=`Age Range` %>% fct_rev()) %>% 
+  ggplot(aes(x=`Age Range`, y=Cases))+
+  geom_col(fill="#2C3E50")+
+  geom_hline(aes(yintercept=50), color="red")+
+  scale_y_continuous(limits=c(0,350))+
+  coord_flip() +
+  geom_label(aes(label=Cases%>%scales::number(accuracy=0.1)))+
+  theme_tq()+
+  labs(
+      title="Age Range",
+      x="", y=""
+  )
+
+library(patchwork)
+
+(State_Plot | Region_plot | Age_plot) + plot_annotation(title="Cases per 100K over last two weeks")
+
+
+
+
+
+
+```
+
+
+
+
+
+
+
+
+
+Red lines represents High Incidence (100 cases per 100,000 over two weeks) and Low Incidence (50 cases per 100,000 over two weeks)
+
+### State wide
+
+Line represents 7-day rolling average excludes last 7 days of data. Points reflect daily result, days excluded from 7-day moving average highlighted.
+```{r}
+
+Cases<-COVID %>% 
+  filter(`Onset Date` != "Unknown") %>% 
+  filter(!is.na(`Onset Date`)) %>% 
+  group_by(`Onset Date`) %>% 
+  summarize(Cases=sum(`Case Count`)) %>% 
+  ungroup() %>% 
+  mutate(Date=ymd(`Onset Date`)) %>% 
+  select(-`Onset Date`) %>%
+  full_join(dates) %>% 
+  arrange(Date) %>% 
+  mutate_if(is.numeric, ~replace(., is.na(.), 0)) %>% 
+  arrange(Date) %>% 
+  mutate(Cases_7=rollmean(Cases, k=7, fill=NA)) %>%
+  mutate(Color=case_when(Date>=max(Date)-days(10) ~ "New", TRUE ~ "Old")) %>% 
+  mutate(Cases_7_2=replace(Cases_7, Date>=max(Date)-days(10), NA)) %>% 
+  mutate(Color=case_when(
+    Date>=max(Date)-days(7) ~ "a",
+    TRUE ~ "b")) %>% 
+  mutate(Cases=Cases/Ohio_Pop, Cases_7_2=Cases_7_2/Ohio_Pop) %>% 
+  filter(Date>=mdy("03-01-20")) %>% 
+  filter(Date!=max(Date))
+
+cutoff<-Cases %>% summarize(cutoff=max(Date)+days(1)) %>% pull() %>% pluck()
+
+Cases %>% 
+  ggplot(aes(x=Date))+
+  geom_point(aes(y=Cases, color=Color))+
+  geom_line(aes(y=Cases_7_2))+
+  geom_hline(aes(yintercept=50/14), color="firebrick")+
+  geom_hline(aes(yintercept=100/14), color="firebrick")+
+  theme_tq()+
+  theme(
+    legend.position="none"
+  )+
+  labs(y="Cases per 100,000")
+
+```
+
+### By State Defined Hospital Region {.tabset .tabset-fade .tabset-pills}
+
+#### Daily
+
+Line represents 7-day rolling average excludes last 7 days of data.
+```{r}
+Region_Cases<-COVID %>% 
+  filter(`Onset Date` != "Unknown") %>% 
+  filter(!is.na(`Onset Date`)) %>% 
+  group_by(`Onset Date`, Region) %>% 
+  summarize(Cases=sum(`Case Count`)) %>% 
+  ungroup() %>% 
+  mutate(Date=ymd(`Onset Date`)) %>% 
+  select(-`Onset Date`) %>%
+  full_join(Region_Date) %>% 
+  mutate_if(is.numeric, ~replace(., is.na(.), 0)) %>% 
+  arrange(Region, Date) %>% 
+  mutate(Cases_7=rollmean(Cases, k=7, fill=NA)) %>% 
+  mutate(Cases_7_2=replace(Cases_7, Date>=max(Date)-days(10), NA)) %>% 
+  mutate(Color=case_when(
+    Date>=max(Date)-days(6) ~ "a",
+    TRUE ~ "b")) %>% 
+  inner_join(Region_Pop) %>% 
+  mutate(Cases=Cases/Population, Cases_7_2=Cases_7_2/Population) %>% 
+  filter(Date>=mdy("03-01-20"))%>% 
+  filter(Date!=max(Date))
+
+Region_Cases %>% 
+  ggplot(aes(x=Date))+
+  geom_point(aes(y=Cases, color=Color), size=0.5)+
+  geom_line(aes(y=Cases_7_2))+
+  geom_hline(aes(yintercept=50/14), color="firebrick")+
+  geom_hline(aes(yintercept=100/14), color="firebrick")+
+  facet_wrap(~Region, ncol=4)+
+  theme_tq()+
+  labs(y="Cases per 100,000", x="")+
+  theme(
+    legend.position="none"
+  )+
+  theme(panel.spacing=unit(0.05, "lines"), axis.text.x=element_text(angle=90))
+
+```
+
+#### Cumulative
+
+```{r}
+Region_Cases %>%
+  group_by(Region) %>% 
+  mutate(CumCases=cumsum(Cases)) %>% 
+    ggplot(aes(x=Date))+
+  geom_line(aes(y=CumCases))+
+  facet_wrap(~Region, ncol=4)+
+  theme_tq()+
+  labs(y="Cumulative Cases per 100,000", x="")+
+  theme(
+    legend.position="none"
+  )+
+  theme(panel.spacing=unit(0.05, "lines"), axis.text.x=element_text(angle=90))
+```
+
+
+### By Age Range  {.tabset .tabset-fade .tabset-pills}
+
+#### Daily
+
+Line represents 7-day rolling average excludes last 7 days of data.
+```{r}
+Age_Cases<-COVID %>% 
+  filter(`Onset Date` != "Unknown") %>% 
+  filter(!is.na(`Onset Date`)) %>% 
+  group_by(`Onset Date`, `Age Range`) %>% 
+  summarize(Cases=sum(`Case Count`)) %>% 
+  ungroup() %>% 
+  mutate(Date=ymd(`Onset Date`)) %>% 
+  select(-`Onset Date`) %>%
+  full_join(Age_Date) %>% 
+  mutate_if(is.numeric, ~replace(., is.na(.), 0)) %>% 
+  arrange(`Age Range`, Date) %>% 
+  mutate(Cases_7=rollmean(Cases, k=7, fill=NA)) %>% 
+  mutate(Cases_7_2=replace(Cases_7, Date>=max(Date)-days(10), NA)) %>% 
+  mutate(Color=case_when(
+    Date>=max(Date)-days(6) ~ "a",
+    TRUE ~ "b")) %>% 
+  inner_join(Age) %>% 
+  mutate(Cases=Cases/Population, Cases_7_2=Cases_7_2/Population) %>% 
+  filter(Date>=mdy("03-01-20"))%>% 
+  filter(Date!=max(Date))
+
+Age_Cases %>% 
+  ggplot(aes(x=Date))+
+  geom_point(aes(y=Cases, color=Color), size=0.5)+
+  geom_line(aes(y=Cases_7_2))+
+  geom_hline(aes(yintercept=50/14), color="firebrick")+
+  geom_hline(aes(yintercept=100/14), color="firebrick")+
+  facet_wrap(~`Age Range`, ncol=4)+
+  theme_tq()+
+  labs(y="Cases per 100,000", x="")+
+  theme(
+    legend.position="none"
+  )+
+  theme(panel.spacing=unit(0.05, "lines"), axis.text.x=element_text(angle=90))
+
+```
+
+#### Cumulative
+```{r}
+Age_Cases %>%
+  group_by(`Age Range`) %>% 
+  mutate(CumCases=cumsum(Cases)) %>% 
+  ggplot(aes(x=Date))+
+  geom_line(aes(y=CumCases))+
+  facet_wrap(~`Age Range`, ncol=4)+
+  theme_tq()+
+  labs(y="Cumulative Cases per 100,000", x="")+
+  theme(panel.spacing=unit(0.05, "lines"), axis.text.x=element_text(angle=90))
+```
+
+## Deaths by Date of Death
+
+### State wide
+
+Line represents 7-day rolling average excludes last 7 days of data. Points reflect daily result, days excluded from 7-day moving average highlighted.
+```{r}
+Deaths<-COVID %>% 
+  filter(`Date Of Death` != "Unknown") %>% 
+  filter(!is.na(`Date Of Death`)) %>% 
+  group_by(`Date Of Death`) %>% 
+  summarize(Deaths=sum(`Death Count`)) %>% 
+  ungroup() %>% 
+  mutate(Date=ymd(`Date Of Death`)) %>% 
+  select(-`Date Of Death`) %>% 
+  full_join(dates) %>% 
+  arrange(Date) %>% 
+  mutate_if(is.numeric, ~replace(., is.na(.), 0)) %>% 
+  mutate(Deaths_7=rollmean(Deaths, k=7, fill=NA)) %>% 
+  mutate(Deaths_7_2=replace(Deaths_7, Date>=max(Date)-days(10), NA)) %>% 
+  mutate(Color=case_when(
+    Date>=max(Date)-days(7) ~ "a",
+    TRUE ~ "b")) %>% 
+  mutate(Deaths=Deaths/Ohio_Pop, Deaths_7_2=Deaths_7_2/Ohio_Pop) %>% 
+  filter(Date>=mdy("03-01-20"))%>% 
+  filter(Date != max(Date))
+
+Deaths %>% 
+  ggplot(aes(x=Date))+
+  geom_point(aes(y=Deaths, color=Color))+
+  geom_line(aes(y=Deaths_7_2))+
+  theme_tq()+
+  theme(
+    legend.position="none"
+  )+
+  labs(y="Deaths per 100,000")
+```
+
+### By State Defined Hospital Region {.tabset .tabset-fade .tabset-pills}
+
+#### Daily
+
+Line represents 7-day rolling average excludes last 7 days of data.
+
+```{r}
+Deaths_Region<-COVID %>% 
+  filter(`Date Of Death` != "Unknown") %>% 
+  filter(!is.na(`Date Of Death`)) %>% 
+  group_by(`Date Of Death`, Region) %>% 
+  summarize(Deaths=sum(`Death Count`)) %>% 
+  ungroup() %>% 
+  mutate(Date=ymd(`Date Of Death`)) %>% 
+  select(-`Date Of Death`) %>%
+  full_join(Region_Date) %>% 
+  arrange(Region, Date) %>% 
+  group_by(Region) %>% 
+  mutate_if(is.numeric, ~replace(., is.na(.), 0)) %>% 
+  mutate(Deaths_7=rollmean(Deaths, k=7, fill=NA)) %>% 
+  mutate(Deaths_7_2=replace(Deaths_7, Date>=max(Date)-days(10), NA)) %>% 
+  mutate(Color=case_when(
+    Date>=cutoff-days(7) ~ "a",
+    TRUE ~ "b")) %>% 
+  inner_join(Region_Pop) %>% 
+  mutate(Deaths=Deaths/Population, Deaths_7_2=Deaths_7_2/Population) %>% 
+  filter(Date>=mdy("03-01-20")) %>% 
+  filter(Date!=max(Date))
+
+Deaths_Region %>% 
+  filter(Date>=mdy("03-15-20")) %>% 
+  ggplot(aes(x=Date))+
+  geom_point(aes(y=Deaths, color=Color), size=0.5)+
+  geom_line(aes(y=Deaths_7_2))+
+  facet_wrap(~Region, ncol=4)+
+  theme_tq()+
+  labs(x="", y="Deaths per 100,000")+
+  theme(
+    legend.position="none"
+  )+
+  theme(panel.spacing=unit(0.05, "lines"), axis.text.x=element_text(angle=90))
+
+
+```
+
+#### Cumulative  
+
+
+```{r}
+Deaths_Region %>%
+  group_by(Region) %>% 
+  mutate(CumDeaths=cumsum(Deaths)) %>% 
+    ggplot(aes(x=Date))+
+  geom_line(aes(y=CumDeaths))+
+  facet_wrap(~Region, ncol=4)+
+  theme_tq()+
+  labs(y="Cumulative Deaths per 100,000", x="")+
+  theme(
+    legend.position="none"
+  )+
+  theme(panel.spacing=unit(0.05, "lines"), axis.text.x=element_text(angle=90))
+```
+
+
+### By Age Group {.tabset .tabset-fade .tabset-pills}
+
+#### Daily
+
+Line represents 7-day rolling average excludes last 7 days of data. 
+```{r}
+Deaths_Age<-COVID %>% 
+  filter(`Date Of Death` != "Unknown") %>% 
+  filter(!is.na(`Date Of Death`)) %>% 
+  group_by(`Date Of Death`, `Age Range`) %>% 
+  summarize(Deaths=sum(`Death Count`)) %>% 
+  ungroup() %>% 
+  mutate(Date=ymd(`Date Of Death`)) %>% 
+  select(-`Date Of Death`) %>%
+  full_join(Age_Date) %>% 
+  arrange(`Age Range`, Date) %>% 
+  group_by(`Age Range`) %>% 
+  mutate_if(is.numeric, ~replace(., is.na(.), 0)) %>% 
+  mutate(Deaths_7=rollmean(Deaths, k=7, fill=NA)) %>% 
+  mutate(Deaths_7_2=replace(Deaths_7, Date>=max(Date)-days(10), NA)) %>% 
+  mutate(Color=case_when(
+    Date>=cutoff-days(7) ~ "a",
+    TRUE ~ "b")) %>% 
+  inner_join(Age) %>% 
+  mutate(Deaths=Deaths/Population, Deaths_7_2=Deaths_7_2/Population)%>% 
+  filter(Date>=mdy("03-01-20")) %>% 
+  filter(Date!=max(Date))
+
+Deaths_Age %>% 
+  filter(Date>=mdy("03-15-20")) %>% 
+  ggplot(aes(x=Date))+
+  geom_point(aes(y=Deaths, color=Color), size=0.5)+
+  geom_line(aes(y=Deaths_7_2))+
+  facet_wrap(~`Age Range`, ncol=4)+
+  theme_tq()+
+  labs(x="", y="Deaths per 100,000")+
+  theme(
+    legend.position="none"
+  )+
+  theme(panel.spacing=unit(0.05, "lines"), axis.text.x=element_text(angle=90))
+```
+
+#### Log Scale
+
+```{r}
+Deaths_Age %>% 
+  filter(Date>=mdy("03-15-20")) %>% 
+  ggplot(aes(x=Date))+
+  geom_point(aes(y=Deaths, color=Color), size=0.5)+
+  geom_line(aes(y=Deaths_7_2))+
+  facet_wrap(~`Age Range`, ncol=4)+
+  theme_tq()+
+  scale_y_log10(labels=scales::number_format(accuracy=0.1))+
+  labs(x="", y="Deaths per 100,000")+
+  theme(
+    legend.position="none"
+  )+
+  theme(panel.spacing=unit(0.05, "lines"), axis.text.x=element_text(angle=90))
+```
+
+
+
+
+#### Cumulative
+
+```{r}
+Deaths_Age %>% 
+  group_by(`Age Range`) %>% 
+  mutate(CumDeaths=cumsum(Deaths)) %>% 
+  ggplot(aes(x=Date))+
+  #geom_point(aes(y=Deaths, color=Color))+
+  geom_line(aes(y=CumDeaths))+
+  facet_wrap(~`Age Range`, ncol=4)+
+  theme_tq()+
+  labs(x="", y="Cumulative Deaths per 100,000")+
+  theme(
+    legend.position="none"
+  )+
+  theme(panel.spacing=unit(0.05, "lines"), axis.text.x=element_text(angle=90))
+
+```
+
+#### Cumulative Log Scale
+
+```{r}
+Deaths_Age %>% 
+  group_by(`Age Range`) %>% 
+  mutate(CumDeaths=cumsum(Deaths)) %>% 
+  ggplot(aes(x=Date))+
+  #geom_point(aes(y=Deaths, color=Color))+
+  geom_line(aes(y=CumDeaths))+
+  facet_wrap(~`Age Range`, ncol=4)+
+  theme_tq()+
+  scale_y_log10(labels=scales::number_format(accuracy=0.1))+
+  labs(x="", y="Cumulative Deaths per 100,000")+
+  theme(
+    legend.position="none"
+  )+
+  theme(panel.spacing=unit(0.05, "lines"), axis.text.x=element_text(angle=90))
+
+```
+
+
+## Hospitalizations by Admission Date
+
+### State wide
+
+Line represents 7-day rolling average excludes last 7 days of data. Points reflect daily result, days excluded from 7-day moving average highlighted.
+
+When Admission Date is Unknown, Onset Date is used
+
+```{r}
+Hospital<-COVID %>% 
+  filter(`Admission Date` != "Unknown") %>% 
+  filter(!is.na(`Admission Date`)) %>% 
+  group_by(`Admission Date`) %>% 
+  summarize(Hospital=sum(`Hospitalized Count`)) %>% 
+  ungroup() %>% 
+  mutate(Date=ymd(`Admission Date`)) %>% 
+  select(-`Admission Date`) %>% 
+  full_join(dates) %>% 
+  arrange(Date) %>% 
+  mutate_if(is.numeric, ~replace(., is.na(.), 0)) %>% 
+  mutate(Hospital_7=rollmean(Hospital, k=7, fill=NA)) %>% 
+  mutate(Hospital_7_2=replace(Hospital_7, Date>=max(Date)-days(10), NA)) %>% 
+  mutate(Color=case_when(
+    Date>=cutoff-days(7) ~ "a",
+    TRUE ~ "b")) %>% 
+  mutate(Hospital=Hospital/Ohio_Pop, Hospital_7_2=Hospital_7_2/Ohio_Pop) %>% 
+  filter(Date>=mdy("03-01-20")) %>% 
+  filter(Date != max(Date))
+
+Hospital %>% 
+  ggplot(aes(x=Date))+
+  geom_point(aes(y=Hospital, color=Color))+
+  geom_line(aes(y=Hospital_7_2))+
+  theme_tq()+
+  theme(
+    legend.position="none"
+  )+
+  labs(y="Hospital per 100,000")
+```
+
+### By State Defined Hospital Region {.tabset .tabset-fade .tabset-pills}
+
+#### Daily
+
+Line represents 7-day rolling average excludes last 7 days of data. 
+
+```{r}
+Hospital_Region<-COVID %>% 
+  filter(`Admission Date` != "Unknown") %>% 
+  filter(!is.na(`Admission Date`)) %>% 
+  group_by(`Admission Date`, Region) %>% 
+  summarize(Hospital=sum(`Hospitalized Count`)) %>% 
+  ungroup() %>% 
+  mutate(Date=ymd(`Admission Date`)) %>% 
+  select(-`Admission Date`) %>%
+  full_join(Region_Date) %>% 
+  arrange(Region, Date) %>% 
+  group_by(Region) %>% 
+  mutate_if(is.numeric, ~replace(., is.na(.), 0)) %>% 
+  mutate(Hospital_7=rollmean(Hospital, k=7, fill=NA)) %>% 
+  mutate(Hospital_7_2=replace(Hospital_7, Date>=max(Date)-days(10), NA)) %>% 
+  mutate(Color=case_when(
+    Date>=cutoff-days(6) ~ "a",
+    TRUE ~ "b")) %>% 
+    inner_join(Region_Pop) %>% 
+  mutate(Hospital=Hospital/Population, Hospital_7_2=Hospital_7_2/Population) %>% 
+  filter(Date>=mdy("03-01-20"))%>% 
+  filter(Date!=max(Date))
+
+Hospital_Region %>% 
+  filter(Date>=mdy("03-15-20")) %>% 
+  ggplot(aes(x=Date))+
+  geom_point(aes(y=Hospital, color=Color), size=0.5)+
+  geom_line(aes(y=Hospital_7_2))+
+  facet_wrap(~Region, ncol=4)+
+  theme_tq()+
+  labs(x="", y="Hospital per 100,000")+
+  theme(
+    legend.position="none"
+  )+
+  theme(panel.spacing=unit(0.05, "lines"), axis.text.x=element_text(angle=90))
+
+```
+
+
+#### Cumulative
+
+```{r}
+Hospital_Region %>%
+  group_by(Region) %>% 
+  mutate(CumHosp=cumsum(Hospital)) %>% 
+    ggplot(aes(x=Date))+
+  geom_line(aes(y=CumHosp))+
+  facet_wrap(~Region, ncol=4)+
+  theme_tq()+
+  labs(y="Cumulative Hospital per 100,000", x="")+
+  theme(
+    legend.position="none"
+  )+
+  theme(panel.spacing=unit(0.05, "lines"), axis.text.x=element_text(angle=90))
+```
+
+
+
+### By Age Group {.tabset .tabset-fade .tabset-pills}
+
+#### Daily
+
+Line represents 7-day rolling average excludes last 7 days of data. 
+
+```{r}
+Hospital_Age<-COVID %>% 
+  filter(`Admission Date` != "Unknown") %>% 
+  filter(!is.na(`Admission Date`)) %>% 
+  group_by(`Admission Date`, `Age Range`) %>% 
+  summarize(Hospital=sum(`Hospitalized Count`)) %>% 
+  ungroup() %>% 
+  mutate(Date=ymd(`Admission Date`)) %>% 
+  select(-`Admission Date`) %>%
+  full_join(Age_Date) %>% 
+  arrange(`Age Range`, Date) %>% 
+  group_by(`Age Range`) %>% 
+  mutate_if(is.numeric, ~replace(., is.na(.), 0)) %>% 
+  mutate(Hospital_7=rollmean(Hospital, k=7, fill=NA)) %>% 
+  mutate(Hospital_7_2=replace(Hospital_7, Date>=max(Date)-days(10), NA)) %>% 
+  mutate(Color=case_when(
+    Date>=cutoff-days(6) ~ "a",
+    TRUE ~ "b")) %>% 
+    inner_join(Age) %>% 
+  mutate(Hospital=Hospital/Population, Hospital_7_2=Hospital_7_2/Population) %>% 
+  filter(Date>=mdy("03-01-20"))%>% 
+  filter(Date!=max(Date))
+
+
+
+
+Hospital_Age %>% 
+  filter(Date>=mdy("03-15-20")) %>% 
+  ggplot(aes(x=Date))+
+  geom_point(aes(y=Hospital, color=Color), size=0.5)+
+  geom_line(aes(y=Hospital_7_2))+
+  facet_wrap(~`Age Range`, ncol=4)+
+  theme_tq()+
+  labs(x="", y="Hospital per 100,000")+
+  theme(
+    legend.position="none"
+  )+
+  theme(panel.spacing=unit(0.05, "lines"), axis.text.x=element_text(angle=90))
+```
+
+#### Log Scale
+
+```{r}
+Hospital_Age %>% 
+  filter(Date>=mdy("03-15-20")) %>% 
+  ggplot(aes(x=Date))+
+  geom_point(aes(y=Hospital, color=Color), size=0.5)+
+  geom_line(aes(y=Hospital_7_2))+
+  facet_wrap(~`Age Range`, ncol=4)+
+  theme_tq()+
+  scale_y_log10(labels=scales::number_format(accuracy=0.1))+
+  labs(x="", y="Hospital per 100,000")+
+  theme(
+    legend.position="none"
+  )+
+  theme(panel.spacing=unit(0.05, "lines"), axis.text.x=element_text(angle=90))
+```
+
+
+
+
+#### Cumulative
+
+```{r}
+Hospital_Age %>%
+  group_by(`Age Range`) %>% 
+  mutate(CumHosp=cumsum(Hospital)) %>% 
+  ggplot(aes(x=Date))+
+  geom_line(aes(y=CumHosp))+
+  facet_wrap(~`Age Range`, ncol=4)+
+  theme_tq()+
+  labs(y="Cumulative Hospital per 100,000", x="")+
+  theme(
+    legend.position="none"
+  )+
+  theme(panel.spacing=unit(0.05, "lines"), axis.text.x=element_text(angle=90))
+```
+
+#### Cumulative Log Scale
+
+```{r}
+Hospital_Age %>%
+  group_by(`Age Range`) %>% 
+  mutate(CumHosp=cumsum(Hospital)) %>% 
+  ggplot(aes(x=Date))+
+  geom_line(aes(y=CumHosp))+
+  scale_y_log10(labels=scales::number_format(accuracy=0.1))+
+  facet_wrap(~`Age Range`, ncol=4)+
+  theme_tq()+
+  labs(y="Cumulative Hospital per 100,000", x="")+
+  theme(
+    legend.position="none"
+  )+
+  theme(panel.spacing=unit(0.05, "lines"), axis.text.x=element_text(angle=90))
+```
+
+
+
+
+# Ohio Public Health Advisory System
+
+https://coronavirus.ohio.gov/wps/portal/gov/covid-19/public-health-advisory-system/ 
+
+## Last 4 weeks of color assignments
+
+```{r}
+
+county_map <- map_data("county") %>% 
+  filter(region=="ohio") 
+
+colors<-read_csv("https://coronavirus.ohio.gov/static/OPHASM/ophas_data.csv") %>% arrange(published_date) %>% 
+  mutate(published_date=ymd(published_date), metric_date=ymd(metric_date))
+
+color_history<-colors %>% distinct(county, published_date, color) %>% 
+  filter(published_date>=max(published_date)-days(22)) %>% 
+  mutate(subregion=tolower(county)) %>% 
+  inner_join(county_map) %>% 
+  mutate(color=as.factor(color) %>% fct_relevel(c("Yellow", "Orange", "Red")))
+  
+
+cols <- c("Yellow" = "yellow", "Orange" = "orange", "Red" = "red", "Purple"="purple")
+
+
+ggplot() +  
+      geom_polygon(data=color_history, aes(x=long, y=lat, fill=color, group=group), color="black", alpha=1)+
+      coord_equal(ratio=1)+# square plot to avoid the distortion
+      theme_tq()+
+      scale_fill_manual(values = cols)+
+      coord_equal(ratio=1)+
+      facet_wrap(~published_date, nrow=2, labeller = label_wrap_gen())+
+      theme(axis.ticks.y = element_blank(),
+            axis.text.y = element_blank(), # get rid of x ticks/text
+            axis.ticks.x = element_blank(),
+            axis.title.x = element_blank(),
+            axis.text.x = element_blank(),
+            axis.title.y = element_blank(),
+            panel.grid.major = element_blank(),
+            panel.grid.minor = element_blank(),
+            plot.title = element_text(size = rel(0.9), face = "bold"),
+            plot.subtitle = element_text(size = rel(1.0)),
+            plot.caption = element_text(size = rel(0.8)),
+            panel.spacing=unit(0.1, "lines"),
+            legend.position="none"
+      )
+
+
+```
+
+
+## Counties flagged for each indicator
+
+```{r}
+
+colors2<-colors %>% filter(published_date==max(published_date) & metric_date==max(metric_date)) %>% 
+  mutate(subregion=tolower(county)) %>% 
+  select(subregion, contains("_score")) %>% 
+  select(-9,-10) %>% 
+  gather(key=indicator, value=value, -subregion) %>% 
+  mutate(indicator=case_when(
+    indicator=="indicator_1_score" ~ "Indicator 1: New cases per capita",
+    indicator=="indicator_2_score" ~ "Indicator 2: Sustained increase in new cases",
+    indicator=="indicator_3_score" ~ "Indicator 3: Proportion of cases not in a congregate setting",
+    indicator=="indicator_4_score" ~ "Indicator 4: Sustained increase in Emergency Department (ED) visits for COVID-like illness",
+    indicator=="indicator_5_score" ~ "Indicator 5: Sustained increase in outpatient visits for COVID-like illness",
+    indicator=="indicator_6_score" ~ "Indicator 6: Sustained increase in new COVID hospital admissions",
+    indicator=="indicator_7_score" ~ "Indicator 7: Intensive Care Unit (ICU) bed occupancy"
+  ),
+  flagged=case_when(value==1 ~ "Yes", TRUE ~ "No"))
+
+
+penalty_box<-colors %>% filter(published_date==max(published_date) & metric_date==max(metric_date)) %>%
+  mutate(subregion=tolower(county)) %>% 
+  select(subregion, high_incidence_flag) %>% 
+  mutate(indicator="High Incidence (100 cases per 100,000 over a two-week period)") %>% 
+  rename(flagged=high_incidence_flag)
+
+colors2a<-bind_rows(colors2, penalty_box) %>% mutate(indicator=as_factor(indicator))
+
+
+
+color3 <- colors2a %>% inner_join(county_map) %>% 
+  mutate(flagged=flagged %>% fct_rev())
+
+
+cols2 <- c("Yes" = "red", "No" = "green")
+
+ggplot() +  
+      geom_polygon(data=color3, aes(x=long, y=lat, fill=flagged, group=group), color="black", alpha=1)+
+      coord_equal(ratio=1)+# square plot to avoid the distortion
+      theme_tq()+
+      scale_fill_manual(values = cols2)+
+      coord_equal(ratio=1)+
+      facet_wrap(~indicator, nrow=2, labeller = label_wrap_gen())+
+      theme(axis.ticks.y = element_blank(),
+            axis.text.y = element_blank(), # get rid of x ticks/text
+            axis.ticks.x = element_blank(),
+            axis.title.x = element_blank(),
+            axis.text.x = element_blank(),
+            axis.title.y = element_blank(),
+            panel.grid.major = element_blank(),
+            panel.grid.minor = element_blank(),
+            plot.title = element_text(size = rel(0.9), face = "bold"),
+            plot.subtitle = element_text(size = rel(1.0)),
+            plot.caption = element_text(size = rel(0.8)),
+            panel.spacing=unit(0.1, "lines"),
+            legend.position="none"
+      )
+
+
+
+```
+History of Ohio Public Health Advisory Alert System Indicators
+
+```{r}
+
+
+
+colors_history<-colors %>% group_by(published_date) %>% filter(metric_date==max(metric_date)) %>% 
+  mutate(subregion=tolower(county)) %>% 
+  select(subregion, contains("_score")) %>% 
+  select(-10,-11) %>% 
+  gather(key=indicator, value=value, -subregion, -published_date) %>% 
+  mutate(indicator=case_when(
+    indicator=="indicator_1_score" ~ "Indicator 1: New cases per capita",
+    indicator=="indicator_2_score" ~ "Indicator 2: Sustained increase in new cases",
+    indicator=="indicator_3_score" ~ "Indicator 3: Proportion of cases not in a congregate setting",
+    indicator=="indicator_4_score" ~ "Indicator 4: Sustained increase in Emergency Department (ED) visits for COVID-like illness",
+    indicator=="indicator_5_score" ~ "Indicator 5: Sustained increase in outpatient visits for COVID-like illness",
+    indicator=="indicator_6_score" ~ "Indicator 6: Sustained increase in new COVID hospital admissions",
+    indicator=="indicator_7_score" ~ "Indicator 7: Intensive Care Unit (ICU) bed occupancy"),
+    flagged=case_when(value==1 ~ "Yes", TRUE ~ "No"))
+
+
+penalty_box_history<-colors %>% group_by(published_date) %>% filter(metric_date==max(metric_date)) %>% 
+  mutate(subregion=tolower(county)) %>% 
+  select(subregion, high_incidence_flag) %>% 
+  mutate(indicator="High Incidence (100 cases per 100,000 over a two-week period)") %>% 
+  rename(flagged=high_incidence_flag) %>% 
+  mutate(value=case_when(flagged=="Yes" ~ 1, TRUE ~0))
+
+colors2a_history<-bind_rows(colors_history, penalty_box_history) %>% mutate(indicator=as_factor(indicator))
+
+colors2a_history %>% 
+  group_by(published_date, indicator) %>% 
+  summarize(Flagged_Share=sum(value)/n()) %>% 
+  ungroup() %>% 
+  ggplot(aes(x=published_date, y=Flagged_Share))+
+  geom_line()+
+  scale_y_continuous(labels=scales::percent_format(accuracy=1))+
+      facet_wrap(~indicator, nrow=2, labeller = label_wrap_gen())+
+  labs(
+    title="Weekly History of Ohio Public Health Advisory Alert System",
+    y="Percent of Counties Exceeding Indicator Critera",
+    x=""
+  )+
+  theme_tq()+
+      theme(plot.title = element_text(size = rel(0.9), face = "bold"),
+            plot.subtitle = element_text(size = rel(1.0)),
+            plot.caption = element_text(size = rel(0.8)),
+            panel.spacing=unit(0.1, "lines"),
+            legend.position="none"
+      )
+
+
+```
+
+# Appendix  
+
+
+![Ohio Hospital Regions](https://odh.ohio.gov/wps/wcm/connect/gov/152d1c03-d4e5-42ee-a3c6-bd0576ee4d7e/1/map+of+Ohio+HCC+regions.jpg?MOD=AJPERES){width=500px}
+
