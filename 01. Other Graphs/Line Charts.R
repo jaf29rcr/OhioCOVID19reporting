@@ -51,7 +51,7 @@ last_week %>%
     theme(panel.spacing=unit(0.1, "lines"))+
     labs(
         title="Indicator 2: Sustained increase in new cases",
-        caption="Data Published 4/15/21",
+        caption="Data Published 5/13/21",
         subtitle="Tripped if metric increases for 5 consecutive days",
         x="",
         y="New Cases (7 Day Average)",
@@ -88,7 +88,7 @@ last_week %>%
     theme(panel.spacing=unit(0.1, "lines"))+
     labs(
         title="Indicator 4: Sustained increase in Emergency Department (ED) visits for COVID-like illness",
-        caption="Data Published 4/15/21",
+        caption="Data Published 5/13/21",
         subtitle="Tripped if metric increases for 5 consecutive days",
         x="",
         y="ED Visits (7 Day Average)",
@@ -124,7 +124,7 @@ last_week %>%
     theme(panel.spacing=unit(0.1, "lines"))+
     labs(
         title="Indicator 5: Sustained increase in outpatient visits for COVID-like illness",
-        caption="Data Published 4/15/21",
+        caption="Data Published 5/13/21",
         subtitle="Tripped if metric increases for 5 consecutive days",
         x="",
         y="Outpatient Visits (7 Day Average)",
@@ -160,7 +160,7 @@ last_week %>%
     theme(panel.spacing=unit(0.1, "lines"))+
     labs(
         title="Indicator 6: Sustained increase in new COVID hospital admissions",
-        caption="Data Published 4/15/21",
+        caption="Data Published 5/13/21",
         subtitle="Tripped if metric increases for 5 consecutive days",
         x="",
         y="Hospital Admissions (7 Day Average)",

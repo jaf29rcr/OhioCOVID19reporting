@@ -1,6 +1,6 @@
 ---
 title: "Ohio Covid-19 Dashboard Summary"
-date: "April 24, 2021"
+date: "April 26, 2021"
 output:
   html_document:
     code_folding: none
