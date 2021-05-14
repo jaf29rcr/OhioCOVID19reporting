@@ -1,6 +1,6 @@
 ---
 title: "Ohio Covid-19 Dashboard Summary"
-date: "April 26, 2021"
+date: "May 14, 2021"
 output:
   html_document:
     code_folding: none
@@ -49,10 +49,16 @@ Age<-read_excel("OhioPop.xlsx") %>% mutate(Population=Population/100000)
 
 # Old Link  https://coronavirus.ohio.gov/static/dashboards/COVIDDeathData_CountyOfResidence.csv"
 
-COVID<-read_csv("https://coronavirus.ohio.gov/static/dashboards/COVIDDeathData_CountyOfResidence.csv", 
+# COVID<-read_csv("COVIDDeathData_CountyOfResidence.csv", 
+#                 col_types=cols(col_character(), col_character(), col_character(),
+#                                col_character(), col_character(), col_character(),
+#                                col_number(), col_number(), col_number())) %>%   
+
+
+COVID<-read_csv("https://coronavirus.ohio.gov/static/dashboards/COVIDDeathData_CountyOfResidence.csv",
                 col_types=cols(col_character(), col_character(), col_character(),
                                col_character(), col_character(), col_character(),
-                               col_number(), col_number(), col_number())) %>% 
+                               col_number(), col_number(), col_number())) %>%
   filter(County!="Grand Total") %>%
   mutate(`Admission Date`=case_when(`Admission Date`== "Unknown" ~ `Onset Date`,
                               TRUE ~ `Admission Date`)) %>%
@@ -792,6 +798,11 @@ https://coronavirus.ohio.gov/wps/portal/gov/covid-19/public-health-advisory-syst
 county_map <- map_data("county") %>% 
   filter(region=="ohio") 
 
+#ymd
+# colors<-read_csv("https://coronavirus.ohio.gov/static/OPHASM/ophas_data.csv") %>% arrange(published_date) %>% 
+#   mutate(published_date=ymd(published_date), metric_date=ymd(metric_date))
+
+#mdy
 colors<-read_csv("https://coronavirus.ohio.gov/static/OPHASM/ophas_data.csv") %>% arrange(published_date) %>% 
   mutate(published_date=ymd(published_date), metric_date=ymd(metric_date))
 
